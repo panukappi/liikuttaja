@@ -62,6 +62,7 @@ void blink_light() {
             redLed.write(0);
             ThisThread::sleep_for(200ms);
         }
+        ThisThread::sleep_for(1s);
     }
 }
 
@@ -74,6 +75,7 @@ void ok_light() {
         else {
             greenLed.write(0);
         }
+        ThisThread::sleep_for(1s);
     }
 }
 
@@ -126,7 +128,7 @@ void timer() {
                 blink = 0;
                 ThisThread::sleep_for(180s);
                 ok = 1;
-                ThisThread::sleep_for(10ms);
+                ThisThread::sleep_for(1200ms);
                 ok = 0;
             }
         }
