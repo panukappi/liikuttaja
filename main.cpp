@@ -123,7 +123,7 @@ void timer() {
             if (i == 180) {
                 blink = 1;
                 while(sittingDetected) {
-                    ThisThread::sleep_for(10ms);
+                    ThisThread::sleep_for(40ms);
                 }
                 ThisThread::sleep_for(1s);
                 blink = 0;
