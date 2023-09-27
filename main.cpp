@@ -69,7 +69,7 @@ void ok_light() {
     while(1) {
         if(ok) {
             greenLed.write(1);
-            ThisThread::sleep_for(5s);
+            ThisThread::sleep_for(10s);
         }
         else {
             greenLed.write(0);
