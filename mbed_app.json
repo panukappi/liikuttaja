@@ -1,8 +1,49 @@
 {
+    "config": {
+        "wifi-ssid": {
+            "help": "WiFi SSID",
+            "value": "\"xxxxxxxxxx\""
+        },
+        "wifi-password": {
+            "help": "WiFi Password",
+            "value": "\"xxxxxxxxxx\""
+        },
+        "esp-rx-pin": {
+            "help": "ESP8266 module RX pin",
+            "value": "PB_7"
+        },
+        "esp-tx-pin": {
+            "help": "ESP8266 module TX pin",
+            "value": "PB_6"
+        },
+        "mqtt-id": {
+            "help": "MQTT Client id",
+            "value": "\"xxxxxxxxxx\""
+        },
+        "mqtt-broker-ip": {
+            "help": "MQTT Broker host ip.",
+            "value": "\"xx.xx.xx.xx\""
+        },
+      "mqtt-broker-hostname": {
+            "help": "MQTT Broker resolvable hostname.",
+            "value": "\"xxxxxxxxxx\""
+        },
+        "mqtt-broker-port": {
+            "help": "MQTT Broker port",
+            "value": "1883"
+        },
+        "mqtt-topic": {
+            "help": "MQTT topic to publish",
+            "value": "\"xxxxxxxxxx\""
+        }
+    },
     "target_overrides": {
-        "*": {
+        "NUCLEO-L432KC": {
             "platform.stdio-baud-rate": 115200,
-            "platform.stdio-buffered-serial": 1
+            "platform.stdio-buffered-serial": 1,
+            "platform.stdio-convert-newlines": true,
+            "esp8266.provide-default" : false,
+            "esp8266.built-in-dns": true
             
         } 
     }
