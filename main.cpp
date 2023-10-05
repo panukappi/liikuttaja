@@ -81,7 +81,7 @@ int main(){
 
     ADXL362.reset();
      // we need to wait at least 500ms after ADXL362 reset
-    ThisThread::sleep_for(600000);
+    ThisThread::sleep_for(600);
     ADXL362.set_mode(ADXL362::MEASUREMENT);
     detect_thread.start(ADXL362_sitting_detect);
     timer_thread.start(sitTimer);
@@ -138,7 +138,7 @@ int main(){
         
         // Sleep time must be less than TCP timeout
         // TODO: check if socket is usable before publishing
-        ThisThread::sleep_for(10000000);
+        ThisThread::sleep_for(10000);
         if (heartRate > 99){
             msg.payloadlen = 42;
         }
@@ -212,11 +212,11 @@ void blink_light() {
     while(1) {
         if(blink) {
             redLed.write(1);
-            ThisThread::sleep_for(200000);
+            ThisThread::sleep_for(200);
             redLed.write(0);
-            ThisThread::sleep_for(150000);
+            ThisThread::sleep_for(150);
         }
-        ThisThread::sleep_for(1000000);
+        ThisThread::sleep_for(1000);
     }
 }
 
@@ -224,12 +224,12 @@ void ok_light() {
     while(1) {
         if(ok) {
             greenLed.write(1);
-            ThisThread::sleep_for(10000000);
+            ThisThread::sleep_for(10000);
         }
         else {
             greenLed.write(0);
         }
-        ThisThread::sleep_for(1000000);
+        ThisThread::sleep_for(1000);
     }
 }
 
@@ -242,7 +242,7 @@ void ADXL362_sitting_detect()
         x1=ADXL362.scanx_u8();
         y1=ADXL362.scany_u8();
         z1=ADXL362.scanz_u8();
-        ThisThread::sleep_for(10000);
+        ThisThread::sleep_for(10);
         x2=ADXL362.scanx_u8();
         y2=ADXL362.scany_u8();
         z2=ADXL362.scanz_u8();
@@ -259,7 +259,7 @@ void ADXL362_sitting_detect()
         }
 
         sittingDetected = detect;
-        ThisThread::sleep_for(10000);
+        ThisThread::sleep_for(10);
         }    
 }
 
@@ -274,24 +274,24 @@ void sitTimer() {
             else {
                 sitBreak = 0;
             }
-            ThisThread::sleep_for(10000000);
+            ThisThread::sleep_for(10000);
             i++;
             if (i == 180) {
                 blink = 1;
                 while(sittingDetected) {
-                    ThisThread::sleep_for(1000000);
+                    ThisThread::sleep_for(1000);
                 }
-                ThisThread::sleep_for(1000000);
+                ThisThread::sleep_for(1000);
                 blink = 0;
                 for (int i = 0; i < 18; i++){
                     if (heartRate < 100){
                         i = -1;
                     }
-                    ThisThread::sleep_for(10000000);
+                    ThisThread::sleep_for(10000);
                 }
                 ok = 1;
                 while(sittingDetected == 0){
-                    ThisThread::sleep_for(1000000);
+                    ThisThread::sleep_for(1000);
                 }
                 ok = 0;
             }
