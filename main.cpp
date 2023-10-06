@@ -22,10 +22,15 @@
 #include "arm_common_tables.h"
 #include "arm_const_structs.h"
 #include "math_helper.h"
+#include <cstdint>
+#include <string>
 #include <time.h>
+#include "ntp-client/NTPClient.h"
 #define BUFF_SIZE 6
 #define SAMPLES             512                
-#define FFT_SIZE            SAMPLES / 2         
+#define FFT_SIZE            SAMPLES / 2
+#define ntpAddress "time.mikes.fi"  // The VTT Mikes in Helsinki
+#define ntpPort 123
 
 // ADXL362::ADXL362(PinName CS, PinName MOSI, PinName MISO, PinName SCK) :
 ADXL362 ADXL362(D6,D11,D12,D13);
@@ -37,6 +42,7 @@ Ticker  timer;
     Thread ok_thread;
     Thread timer_thread;
     Thread heart_thread;
+    Thread ntp_thread;
 
 DigitalOut redLed(D1);
 DigitalOut greenLed(D0);
@@ -47,10 +53,12 @@ void blink_light();
 void ok_light();
 void heart_rate();
 void sitTimer();
+void ntpTime();
 
 int8_t y,z;
 int sittingDetected = 0;
 char * position = "";
+time_t timestamp;
 int i;
 int sitBreak;
 int blink = 0;
@@ -61,6 +69,8 @@ bool        do_sample = false;
 float32_t   maxValue;
 int maxIndex;
 int heartRate;
+
+ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
 
 void getPeak(){
     for (int k = 10; k < FFT_SIZE-11; k += 1){
@@ -88,8 +98,8 @@ int main(){
     blink_thread.start(blink_light);
     ok_thread.start(ok_light);
     heart_thread.start(heart_rate);
+    ntp_thread.start(ntpTime);
 
-    ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
     SocketAddress deviceIP;
     //Store broker IP
     SocketAddress MQTTBroker;
@@ -127,25 +137,26 @@ int main(){
     msg.retained = false;
     msg.dup = false;
     msg.payload = (void*)buffer;
-    msg.payloadlen = 41;
 
     socket.open(&esp);
     socket.connect(MQTTBroker);
 
     client.connect(data);
+
+
         while(1) {
         client.publish(MBED_CONF_APP_MQTT_TOPIC, msg);
         
         // Sleep time must be less than TCP timeout
         // TODO: check if socket is usable before publishing
         ThisThread::sleep_for(10000);
+
+        msg.payloadlen = 40 + string(ctime(&timestamp)).length() + string(position).length();
         if (heartRate > 99){
-            msg.payloadlen = 42;
+            msg.payloadlen++;
         }
-        else{
-            msg.payloadlen = 41;
-        }
-        sprintf(buffer, "{\"position\": \"%s\", \"heartrate\": %d}", position, heartRate);
+
+        sprintf("{\"time\":\"%s\",\"position\":\"%s\",\"heartrate\":%d}", ctime(&timestamp), position, heartRate);
     }
 
 
@@ -251,7 +262,7 @@ void ADXL362_sitting_detect()
         z=(z1 + z2)/2;
         if (y>-50 || z>70){
             detect = 1;
-            position = "Sitting ";
+            position = "Sitting";
             }
         else {
             detect = 0;
@@ -296,5 +307,15 @@ void sitTimer() {
                 ok = 0;
             }
         }
+    }
+}
+
+void ntpTime(){
+    NTPClient ntp(&esp);
+    ntp.set_server(ntpAddress, ntpPort);
+    while(1){
+        timestamp = ntp.get_timestamp();
+        timestamp += (60*60*3);
+        ThisThread::sleep_for(1000);
     }
 }
