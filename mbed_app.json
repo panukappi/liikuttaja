@@ -2,11 +2,11 @@
     "config": {
         "wifi-ssid": {
             "help": "WiFi SSID",
-            "value": "\"xxxxxxxxxx\""
+            "value": "\"Pixel 7\""
         },
         "wifi-password": {
             "help": "WiFi Password",
-            "value": "\"xxxxxxxxxx\""
+            "value": "\"valtteri\""
         },
         "esp-rx-pin": {
             "help": "ESP8266 module RX pin",
@@ -18,7 +18,7 @@
         },
         "mqtt-id": {
             "help": "MQTT Client id",
-            "value": "\"xxxxxxxxxx\""
+            "value": "\"9347gyn40h37ghwr8g\""
         },
         "mqtt-broker-ip": {
             "help": "MQTT Broker host ip.",
@@ -26,7 +26,7 @@
         },
       "mqtt-broker-hostname": {
             "help": "MQTT Broker resolvable hostname.",
-            "value": "\"xxxxxxxxxx\""
+            "value": "\"test.mosquitto.org\""
         },
         "mqtt-broker-port": {
             "help": "MQTT Broker port",
@@ -34,11 +34,11 @@
         },
         "mqtt-topic": {
             "help": "MQTT topic to publish",
-            "value": "\"xxxxxxxxxx\""
+            "value": "\"Liikuttaja\""
         }
     },
     "target_overrides": {
-        "NUCLEO-L432KC": {
+        "*": {
             "platform.stdio-baud-rate": 115200,
             "platform.stdio-buffered-serial": 1,
             "platform.stdio-convert-newlines": true,

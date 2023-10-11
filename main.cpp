@@ -19,28 +19,20 @@
 #include <cmath>
 #include "ESP8266Interface.h"
 #include <MQTTClientMbedOs.h>
-#include "arm_common_tables.h"
-#include "arm_const_structs.h"
-#include "math_helper.h"
-#include <cstdint>
-#include <string>
-#include <time.h>
 #include "ntp-client/NTPClient.h"
 #define BUFF_SIZE 6
-#define SAMPLES             512                
-#define FFT_SIZE            SAMPLES / 2
 #define ntpAddress "time.mikes.fi"  // The VTT Mikes in Helsinki
 #define ntpPort 123
 
 // ADXL362::ADXL362(PinName CS, PinName MOSI, PinName MISO, PinName SCK) :
 ADXL362 ADXL362(D6,D11,D12,D13);
 
-Ticker  timer;
 //Threads
     Thread detect_thread;
     Thread blink_thread;
     Thread ok_thread;
     Thread timer_thread;
+    Thread ticks_thread;
     Thread heart_thread;
     Thread ntp_thread;
 
@@ -48,57 +40,42 @@ DigitalOut redLed(D1);
 DigitalOut greenLed(D0);
 AnalogIn heartPin(A0);
 
-void ADXL362_sitting_detect();
+int ADXL362_sitting_detect();
 void blink_light();
 void ok_light();
+void heartrateTimer();
 void heart_rate();
-void sitTimer();
+void timer();
 void ntpTime();
 
 int8_t y,z;
 int sittingDetected = 0;
 char * position = "";
-time_t timestamp;
 int i;
 int sitBreak;
 int blink = 0;
 int ok = 0;
-float32_t   sensor_data[SAMPLES*2];
-float32_t   output_fft[FFT_SIZE];
-bool        do_sample = false;
-float32_t   maxValue;
-int maxIndex;
 int heartRate;
-
+int ticks = 0;
+int rollover = 0;
+time_t timestamp;
+    
 ESP8266Interface esp(MBED_CONF_APP_ESP_TX_PIN, MBED_CONF_APP_ESP_RX_PIN);
-
-void getPeak(){
-    for (int k = 10; k < FFT_SIZE-11; k += 1){
-        if (output_fft[k] > maxValue){
-            maxValue = output_fft[k];
-            maxIndex = k;
-        }
-    }
-}
-
-void sample()
-{
-    do_sample = true;
-}
-
 
 int main(){
 
     ADXL362.reset();
      // we need to wait at least 500ms after ADXL362 reset
-    ThisThread::sleep_for(600);
+    ThisThread::sleep_for(600ms);
     ADXL362.set_mode(ADXL362::MEASUREMENT);
     detect_thread.start(ADXL362_sitting_detect);
-    timer_thread.start(sitTimer);
+    timer_thread.start(timer);
     blink_thread.start(blink_light);
     ok_thread.start(ok_light);
+    ticks_thread.start(heartrateTimer);
     heart_thread.start(heart_rate);
     ntp_thread.start(ntpTime);
+
 
     SocketAddress deviceIP;
     //Store broker IP
@@ -119,10 +96,10 @@ int main(){
         printf("\nConnection success\n");
     }
 
-    esp.get_ip_address();
+    esp.get_ip_address(&deviceIP);
     printf("IP via DHCP: %s\n", deviceIP.get_ip_address());
 
-    esp.gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME, &MQTTBroker, NSAPI_IPv4);
+    esp.gethostbyname(MBED_CONF_APP_MQTT_BROKER_HOSTNAME, &MQTTBroker, NSAPI_IPv4, "esp");
     MQTTBroker.set_port(MBED_CONF_APP_MQTT_BROKER_PORT);
 
     MQTTPacket_connectData data = MQTTPacket_connectData_initializer;       
@@ -137,97 +114,154 @@ int main(){
     msg.retained = false;
     msg.dup = false;
     msg.payload = (void*)buffer;
+    msg.payloadlen = 40;
 
     socket.open(&esp);
     socket.connect(MQTTBroker);
 
     client.connect(data);
-
-
         while(1) {
-        client.publish(MBED_CONF_APP_MQTT_TOPIC, msg);
         
         // Sleep time must be less than TCP timeout
         // TODO: check if socket is usable before publishing
-        ThisThread::sleep_for(10000);
-
-        msg.payloadlen = 40 + string(ctime(&timestamp)).length() + string(position).length();
+        ThisThread::sleep_for(10s);
+        msg.payloadlen = 47;
         if (heartRate > 99){
             msg.payloadlen++;
         }
-
-        sprintf("{\"time\":\"%s\",\"position\":\"%s\",\"heartrate\":%d}", ctime(&timestamp), position, heartRate);
+        if (sittingDetected){
+            msg.payloadlen--;
+        }
+        if (timestamp > 9){
+            msg.payloadlen++;
+            if (timestamp > 99){
+                msg.payloadlen++;
+                if (timestamp > 999){
+                    msg.payloadlen++;
+                    if (timestamp > 9999){
+                        msg.payloadlen++;
+                        if (timestamp > 99999){
+                            msg.payloadlen++;
+                            if (timestamp > 999999){
+                                msg.payloadlen++;
+                                if (timestamp > 9999999){
+                                    msg.payloadlen++;
+                                    if (timestamp > 99999999){
+                                        msg.payloadlen++;
+                                        if (timestamp > 999999999){
+                                            msg.payloadlen++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+       
+        sprintf(buffer, "{\"time\":%i,\"position\":\"%s\",\"heartrate\":%d}", timestamp, position, heartRate);
+        client.publish(MBED_CONF_APP_MQTT_TOPIC, msg);
     }
 
 
 }
 
 void heart_rate() {
-    while(1) {
-        char str[2048] = {0};
-        timer.attach(&sample, 0.097); //25us 40KHz sampling rate
-        //t.reset();
-        //t.start();
-        for (int i = 0; i < 2*SAMPLES; i += 2) {
-            while (do_sample == false) {}
-            do_sample = false;
-            //sensor_data[i] = sound_analog.read(); 
-            sensor_data[i] = heartPin.read();   //Real part
-            sensor_data[i + 1] = 0;                  //Imaginary Part set to zero
-            //t.stop();
-            //printf("%d \n", t.read_us());
-            //t.reset();
-            //t.start();
+    int peak = 0;
+    int peaks[6] = {0,0,0,0,0,0};
+    int times[5] = {0,0,0,0,0};
+    int rates[5] = {0,0,0,0,0};
+    int ratesAvg;
+    int rateNo = 0;
+    int peakNo = 0;
+    int rate;
+    int readings[8] = {0,0,0,0,0,0,0,0};
+
+    while (true) {
+        int heartReading = heartPin.read_u16() >>6;
+        //printf("%d\n", heartRate);
+        for (int i = 0; i < 7; i++){
+            readings[i] = readings[i+1];
         }
-        timer.detach();
+        readings[7] = heartReading;
 
-
-
-
-
-
-        /*------------------------ FFT CALCULATION ---------------------------*/
-        // Init the Complex FFT module, intFlag = 0, doBitReverse = 1
-        // NB using predefined arm_cfft_sR_f32_lenXXX, in this case XXX is 512
-        // Run FFT on sample data.
-        arm_cfft_f32(&arm_cfft_sR_f32_len512, sensor_data, 0, 1);
-
-        // Complex Magniture Module put results into Output(Half size of the Input)
-        arm_cmplx_mag_f32(sensor_data, output_fft, FFT_SIZE);
-
-
-        /*---------------------- SERIAL DATA FFT -----------------------------*/
-        for (int i = 0; i < (int)(FFT_SIZE); i++) {
-            char buf[20];
-            if(i == 0) {
-                output_fft[i] = 0.0;              /* The first value of FFT set is 0 */
-            }
-            sprintf (buf, "%.4f", output_fft[i]); /* convert float to string */
-            strcat(str, buf);                     /* appended to string */
-            if(i < (int)(FFT_SIZE - 1)) {
-                strcat(str, ",");
+        for (int i = 0; i < 3; i++){
+            if (readings[i] < readings[3]){
+                peak++;
             }
         }
-        //myserial.printf("%s\n", str);
-        printf("%s\n", str);
+        for (int i = 4; i < 7; i++){
+            if (readings[i] < readings[3]){
+                peak++;
+            }
+        }
+        if (peak == 5){
+            peaks[peakNo] = ticks + 9999 * rollover;
+            ThisThread::sleep_for(50ms);
+            peakNo++;
+            if (peakNo == 6){
+                peakNo = 0;
+                for (int i = 0; i < 5; i++){
+                    for (int j = 0; j < 6; j++){
+                        if (peaks[i+1] - peaks[i] > times[j]){
+                            for (int k = j; k < 4; k++){
+                                times[k+1] = times[k];
+                            }
+                            times[j] = peaks[i+1] - peaks[i];
+                        }
+                    }
+                }
+                rate = 600 / times[3];
 
-        getPeak();
+                for (int i = 0; i < 6; i++){
+                    peaks[i] = 0;
+                }
+                for (int i = 0; i < 5; i++){
+                    times[i] = 0;
+                }
+                if (rate > 30 && rate < 190){
+                    rates[rateNo] = rate;
+                    rateNo++;
+                }
 
-        heartRate = maxIndex * 1.2;
-        maxValue = 0;
-    } 
+                if (rateNo == 5){
+                    rateNo = 0;
+                    for (int i = 0; i < 5; i++){
+                        ratesAvg += rates[i];
+                    }
+                    ratesAvg = ratesAvg / 5;
+                    heartRate = ratesAvg;
+                    printf("\nHeart rate: %d\n", ratesAvg);
+                    //heartRate = ratesAvg;
+                }
+            }
+        }
+        peak = 0;
+        ThisThread::sleep_for(50ms);
+    }
 }
 
+void heartrateTimer() {
+    while(1){
+    ticks++;
+    if (ticks > 9999){
+        ticks = 0;
+        rollover++;
+    }
+    ThisThread::sleep_for(100ms);
+}
+}
 
 void blink_light() {
     while(1) {
         if(blink) {
             redLed.write(1);
-            ThisThread::sleep_for(200);
+            ThisThread::sleep_for(200ms);
             redLed.write(0);
-            ThisThread::sleep_for(150);
+            ThisThread::sleep_for(150ms);
         }
-        ThisThread::sleep_for(1000);
+        ThisThread::sleep_for(1s);
     }
 }
 
@@ -235,17 +269,26 @@ void ok_light() {
     while(1) {
         if(ok) {
             greenLed.write(1);
-            ThisThread::sleep_for(10000);
+            ThisThread::sleep_for(10s);
         }
         else {
             greenLed.write(0);
         }
-        ThisThread::sleep_for(1000);
+        ThisThread::sleep_for(1s);
+    }
+}
+
+void ntpTime(){
+    NTPClient ntp(&esp);
+    ntp.set_server(ntpAddress, ntpPort);
+    while(1){
+        timestamp = ntp.get_timestamp();
+        ThisThread::sleep_for(10s);
     }
 }
 
 
-void ADXL362_sitting_detect()
+int ADXL362_sitting_detect()
 {
     int8_t x1,y1,z1,x2,y2,z2;
     int detect = 0;
@@ -253,7 +296,7 @@ void ADXL362_sitting_detect()
         x1=ADXL362.scanx_u8();
         y1=ADXL362.scany_u8();
         z1=ADXL362.scanz_u8();
-        ThisThread::sleep_for(10);
+        ThisThread::sleep_for(10ms);
         x2=ADXL362.scanx_u8();
         y2=ADXL362.scany_u8();
         z2=ADXL362.scanz_u8();
@@ -270,11 +313,11 @@ void ADXL362_sitting_detect()
         }
 
         sittingDetected = detect;
-        ThisThread::sleep_for(10);
+        ThisThread::sleep_for(10ms);
         }    
 }
 
-void sitTimer() {
+void timer() {
     while(1) {
         sitBreak = 0;
         i = 0;
@@ -285,37 +328,27 @@ void sitTimer() {
             else {
                 sitBreak = 0;
             }
-            ThisThread::sleep_for(10000);
+            ThisThread::sleep_for(10s);
             i++;
             if (i == 180) {
                 blink = 1;
                 while(sittingDetected) {
-                    ThisThread::sleep_for(1000);
+                    ThisThread::sleep_for(1s);
                 }
-                ThisThread::sleep_for(1000);
+                ThisThread::sleep_for(1s);
                 blink = 0;
                 for (int i = 0; i < 18; i++){
                     if (heartRate < 100){
                         i = -1;
                     }
-                    ThisThread::sleep_for(10000);
+                    ThisThread::sleep_for(10s);
                 }
                 ok = 1;
                 while(sittingDetected == 0){
-                    ThisThread::sleep_for(1000);
+                    ThisThread::sleep_for(1s);
                 }
                 ok = 0;
             }
         }
-    }
-}
-
-void ntpTime(){
-    NTPClient ntp(&esp);
-    ntp.set_server(ntpAddress, ntpPort);
-    while(1){
-        timestamp = ntp.get_timestamp();
-        timestamp += (60*60*3);
-        ThisThread::sleep_for(1000);
     }
 }
